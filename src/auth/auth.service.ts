@@ -1,7 +1,10 @@
 // 核心登入邏輯
-import { Injectable, UnauthorizedException, BadRequestException, InternalServerErrorException } from '@nestjs/common'
+import { Injectable, UnauthorizedException, BadRequestException, InternalServerErrorException, HttpStatus,HttpException } from '@nestjs/common'
 import { JwtService } from '@nestjs/jwt';
+import { ConfigService } from '@nestjs/config';
+
 import * as bcrypt from 'bcrypt';
+import { randomInt } from 'crypto';
 import { UsersService } from '../users/users.service';
 import {ErrorCode, ErrorMessageMap} from '../common/errors/error-code.map';
 // import { CreateUserDto } from '../users/dto/create-user.dto'
@@ -11,6 +14,7 @@ import { LoginDto } from './dto/login.dto'
 import Redis from 'ioredis';
 import * as nodemailer from 'nodemailer'
 
+
 @Injectable()
 export class AuthService {
     private redisClient: Redis;
@@ -18,13 +22,16 @@ export class AuthService {
 
     constructor(
         private usersService: UsersService,
-        private jwtService: JwtService
+        private jwtService: JwtService,
+        private configService: ConfigService
     ) { 
         console.log('當前讀到的信箱帳號:', process.env.EMAIL_USER);
         // 初始化 Redis 連線(對應 docker-compose 的 port 6379)
+
         this.redisClient = new Redis({
-            host: 'localhost',
-            port: 6379
+            host: this.configService.get('REDIS_HOST', 'localhost'),
+            port: this.configService.get<number>('REDIS_PORT', 6379),
+            password: this.configService.get('REDIS_PASSWORD') || undefined
         })
         // 初始化 Nodemailer 寄信設定
         this.transporter = nodemailer.createTransport({
@@ -79,15 +86,38 @@ export class AuthService {
         
     }
 
+    
+
     // 產收並發送驗證碼
     async sendVerificationCode(email: string) {
-        // 產生 4 位數的驗證碼
-        const code = Math.floor(1000 + Math.random() * 9999).toString();
+        const cooldownKey = `auth:code:cooldown:${email}`;
+        const codeKey = `auth:code:${email}`;
 
+        // 1. 防濫用檢查：是否還在 60 秒冷卻期間
+        const isCooldown = await this.redisClient.get(cooldownKey);
+        if (isCooldown) {
+            const ttl = await this.redisClient.ttl(cooldownKey);
+            const retryAfter = ttl > 0 ? ttl : this.configService.get<number>('REDIS_TTL', 60);
+            throw new HttpException(
+                {
+                    message: '請勿頻繁發送驗證碼',
+                    retryAfter,
+                },
+                HttpStatus.TOO_MANY_REQUESTS,
+            );
+        }
+        // 2. 產生 4 位數的驗證碼
+  
+        const code = randomInt(1000, 10000).toString();
+        
+        // 3. 讀取環境變數 TTL (確保 Redis TTL 存在，否則預測 60)
+        const cooldownTtl = this.configService.get<number>('REDIS_TTL', 60);
+        const codeTtl = this.configService.get<number>('REDIS_CODE_TTL', 300)
+       
+        // 4. 同步寫入 Redis，使用 Pipeline 或連續 await，避免併發問題
+        await this.redisClient.setex(cooldownKey, cooldownTtl, '1')
+        await this.redisClient.setex(codeKey, codeTtl, code)
         try {
-            // 存入 Redis，設定 key 為 auth:code:{email}, 並設定過期間為 300 秒
-            await this.redisClient.setex(`auth:code:${email}`, 300, code);
-
             // 發送 email
             await this.transporter.sendMail({
                 from: `"Neko Space" <${process.env.EMAIL_USER}>`,
@@ -95,7 +125,7 @@ export class AuthService {
                 subject: '[Neko Space] 您的註冊驗證碼',
                 html: `
                     <div style="font-family: Arial, sans-serif; padding: 20px;">
-                        <h2>歡迎註冊貓咪專案</h2>
+                        <h2 style="color: #575757;">歡迎註冊貓咪專案</h2>
                         <p>您的驗證碼為：</p>
                         <h1 style="color: #409EFF; letter-spacing: 5px;">${code}</h1>
                         <p>此驗證碼將在 <strong>5 分鐘</strong> 後失效。若非本人操作，請忽略此信件。</p>
@@ -105,6 +135,12 @@ export class AuthService {
         } catch (error) {
             console.log('發送驗證碼失敗', error)
             throw new InternalServerErrorException('無法發送驗證信，請稍後再試')
+        }
+
+        return {
+            statusCode: 200,
+            message: '驗證碼已發送',
+            retryAfter: cooldownTtl
         }
     }
 
@@ -128,21 +164,5 @@ export class AuthService {
         return true;
     }
 
-    /* async register(createUserDto: CreateUserDto) {
-        const newUser = await this.usersService.create({
-            username: createUserDto.username,
-            password: createUserDto.password,
-            email: createUserDto.email
-        });
-
-        return {
-            message: '註冊成功',
-            user: {
-                id: newUser.id,
-                username: newUser.username,
-                email: newUser.email,
-                role: newUser.role
-            }
-        }
-    } */
+    
 }

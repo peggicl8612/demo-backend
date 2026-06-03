@@ -5,7 +5,7 @@ import { LoginDto } from './dto/login.dto';
 import { UsersService } from '../users/users.service';
 // import { CreateUserDto } from '../users/dto/create-user.dto';
 import { SendCodeDto, VerifyAndRegisterDto } from './dto/verify.dto'
-
+import { Public } from '../common/decorator/public.decorator';
 @Controller('auth')
 export class AuthController {
     constructor(
@@ -16,12 +16,14 @@ export class AuthController {
     // POST /auth/login
     @HttpCode(HttpStatus.OK)
     @Post('login')
+        @Public()
     login(@Body() loginDto: LoginDto) {
         return this.authService.login(loginDto)
     }
     // 1. 發送驗證碼: POST /auth/send-code
     @HttpCode(HttpStatus.OK)
     @Post('send-code')
+        @Public()
     async sendCode(@Body() sendCodeDto: SendCodeDto) {
         await this.authService.sendVerificationCode(sendCodeDto.email);
         return { message: '驗證碼已發送'}
@@ -30,6 +32,7 @@ export class AuthController {
     // 2. 驗證並註冊登入：POST /auth/verify
     @HttpCode(HttpStatus.CREATED)
     @Post('verify')
+        @Public()
     async verifyAndRefister(@Body() verifyDto: VerifyAndRegisterDto) {
         // a. 驗證使用者提交的 code 是否與 Redis 中的一致
         await this.authService.verifyEmailCode(verifyDto.email, verifyDto.code);
@@ -48,11 +51,5 @@ export class AuthController {
         })
     }
 
-    // POST /auth/register
-    /* @HttpCode(HttpStatus.CREATED)
-    @Post('register')
-    async register(@Body() createUserDto: CreateUserDto) {
-        await this.usersService.create(createUserDto)
-        return this.authService.login(createUserDto)
-    } */
+    
 }

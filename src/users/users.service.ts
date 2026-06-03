@@ -1,10 +1,12 @@
-import { Injectable, ConflictException } from '@nestjs/common';
+import { Injectable, ConflictException, BadRequestException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import * as bcrypt from 'bcrypt';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { User, UserDocument } from './schemas/user.schema';
+import { NotFoundException } from '@nestjs/common';
+import { UpdateProfileDto } from './dto/update-profile.dto';
 
 @Injectable()
 export class UsersService {
@@ -17,10 +19,15 @@ export class UsersService {
     const { username, password, email } = createUserDto;
     
     // 1. 檢查帳號是否已經存在
-    const existingUser = await this.userModel.findOne({ username });
+    const existingUser = await this.userModel.findOne({ 
+      $or: [{username}, {email}]
+     });
     if (existingUser) {
-      throw new ConflictException('帳號已存在')
+      const field = existingUser.username === username ? '帳號' : '電子信箱'
+      throw new ConflictException(`${field}已存在`)
     }
+
+  
 
     // 2. 密碼加密（Salt Rounds 雜湊次數）
     const saltRounds = 10;
@@ -34,8 +41,19 @@ export class UsersService {
     });
     return newUser.save();
   }
-
   
+  // 註冊時，檢查帳號信箱是否已存在
+  async checkAvailability(query: { username?: string; email?: string }) {
+    const { username, email } = query;
+    if (!username && !email) {
+      throw new BadRequestException('必須提供 username 或 email');
+    }
+  
+    const filter = username ? { username } : { email };
+    const user = await this.findOneByFilter(filter)
+  
+    return { exists: !!user };
+  }
 
   findAll() {
     return this.userModel.find().sort({ createdAt: -1 }).exec();
@@ -50,11 +68,32 @@ export class UsersService {
     return this.userModel.findOne({ username }).select('+password').exec();
   }
 
+  findOneByFilter(filter: { username?: string; email?: string }) {
+    return this.userModel.findOne(filter).select('_id').exec();
+  }
   update(id: string, updateUserDto: UpdateUserDto) {
     return this.userModel.findByIdAndUpdate(id, updateUserDto, { new: true }).exec();
   }
 
   remove(id: string) {
     return this.userModel.findByIdAndDelete(id).exec();
+  }
+
+  async findMe(userId: string) {
+    const user = await this.userModel.findById(userId).exec();
+    if (!user) {
+      throw new NotFoundException('使用者不存在')
+    }
+    return user; // schema toJSON 會自動去掉 password
+  }
+
+  async updateMe(userId: string, dto: UpdateProfileDto) {
+    const user = await this.userModel
+      .findByIdAndUpdate(userId, dto, { new: true })
+      .exec();
+    if (!user) {
+      throw new NotFoundException('使用者不存在')
+    }
+    return user;
   }
 }
