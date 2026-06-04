@@ -25,8 +25,7 @@ export class AuthController {
     @Post('send-code')
         @Public()
     async sendCode(@Body() sendCodeDto: SendCodeDto) {
-        await this.authService.sendVerificationCode(sendCodeDto.email);
-        return { message: '驗證碼已發送'}
+        return this.authService.sendVerificationCode(sendCodeDto.email);
     }
 
     // 2. 驗證並註冊登入：POST /auth/verify

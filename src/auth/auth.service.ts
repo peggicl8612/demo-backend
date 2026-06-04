@@ -100,7 +100,8 @@ export class AuthService {
             const retryAfter = ttl > 0 ? ttl : this.configService.get<number>('REDIS_TTL', 60);
             throw new HttpException(
                 {
-                    message: '請勿頻繁發送驗證碼',
+                    errorCode: ErrorCode.TOO_MANY_REQUESTS,
+                    message: ErrorMessageMap[ErrorCode.TOO_MANY_REQUESTS],
                     retryAfter,
                 },
                 HttpStatus.TOO_MANY_REQUESTS,
@@ -152,11 +153,7 @@ export class AuthService {
         if (!savedCode || savedCode !== code) {
             throw new BadRequestException('驗證碼已過期或不存在，請重新發送')
         }
-
-        // 判斷是否正確
-        if (savedCode !== code) {
-            throw new BadRequestException('驗證碼錯誤')
-        }
+ 
 
         // 驗證成功，立即從 Redis 刪除該驗證碼，確保「一次性使用 OTP」的安全原則
         await this.redisClient.del(`auth:code:${email}`);

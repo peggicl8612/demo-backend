@@ -1,4 +1,4 @@
-import { Injectable, ConflictException, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, HttpStatus } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import * as bcrypt from 'bcrypt';
@@ -7,6 +7,8 @@ import { UpdateUserDto } from './dto/update-user.dto';
 import { User, UserDocument } from './schemas/user.schema';
 import { NotFoundException } from '@nestjs/common';
 import { UpdateProfileDto } from './dto/update-profile.dto';
+import { ErrorCode } from '../common/errors/error-code.map';
+import { throwAppError } from '../common/errors/app.exception';
 
 @Injectable()
 export class UsersService {
@@ -21,12 +23,15 @@ export class UsersService {
     // 1. 檢查帳號是否已經存在
     const existingUser = await this.userModel.findOne({ 
       $or: [{username}, {email}]
-     });
+    });
     if (existingUser) {
-      const field = existingUser.username === username ? '帳號' : '電子信箱'
-      throw new ConflictException(`${field}已存在`)
+      if (existingUser.username === username) {
+        throwAppError(ErrorCode.USER_USERNAME_DUPLICATE, HttpStatus.CONFLICT)
+        } else {
+          throwAppError(ErrorCode.USER_EMAIL_DUPLICATE, HttpStatus.CONFLICT)
+        }
     }
-
+    
   
 
     // 2. 密碼加密（Salt Rounds 雜湊次數）
