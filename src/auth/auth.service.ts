@@ -37,13 +37,15 @@ export class AuthService {
         if (redisUrl) {
             this.redisClient = new Redis(redisUrl, baseRedisOptions);
         } else {
-            this.redisClient = new Redis({
-                host: this.configService.get('REDIS_HOST', 'localhost'),
-                port: this.configService.get<number>('REDIS_PORT', 6379),
-                password: this.configService.get('REDIS_PASSWORD') || undefined,
-                tls: redisUseTls ? {} : undefined,
-                ...baseRedisOptions,
-            });
+ this.redisClient = new Redis({
+    host: this.configService.get('REDIS_HOST', 'localhost'),
+    port: parseInt(this.configService.get('REDIS_PORT', '6379'), 10),
+    password: this.configService.get('REDIS_PASSWORD') || undefined,
+    // 關鍵：Upstash 必須用 TLS，且 Render 環境下不要有亂七八糟的參數
+    tls: {}, 
+    maxRetriesPerRequest: 3,
+    connectTimeout: 10000, // 增加等待時間，避免網路抖動就斷線
+});
         }
 
         this.redisClient.on('error', (error) => {
