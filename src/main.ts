@@ -4,8 +4,11 @@ import { ValidationPipe } from '@nestjs/common';
 import { AllExceptionFilter } from './common/filters/all-exception.filter';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
-  app.useGlobalPipes(
+  // main.ts
+console.log('DEBUG: Redis Host is:', process.env.REDIS_HOST);
+console.log('DEBUG: Mail User is:', process.env.MAIL_USER);
+const app = await NestFactory.create(AppModule);
+   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
       transform: true,

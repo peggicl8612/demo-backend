@@ -26,13 +26,29 @@ export class AuthService {
         private configService: ConfigService
     ) { 
         console.log('當前讀到的信箱帳號:', process.env.EMAIL_USER);
-        // 初始化 Redis 連線(對應 docker-compose 的 port 6379)
+        // 初始化 Redis 連線（雲端優先使用 REDIS_URL，例如 rediss://）
+        const redisUrl = this.configService.get<string>('REDIS_URL');
+        const redisUseTls = this.configService.get<string>('REDIS_USE_TLS', 'false') === 'true';
+        const baseRedisOptions = {
+            maxRetriesPerRequest: 3,
+            enableReadyCheck: true,
+        };
 
-        this.redisClient = new Redis({
-            host: this.configService.get('REDIS_HOST', 'localhost'),
-            port: this.configService.get<number>('REDIS_PORT', 6379),
-            password: this.configService.get('REDIS_PASSWORD') || undefined
-        })
+        if (redisUrl) {
+            this.redisClient = new Redis(redisUrl, baseRedisOptions);
+        } else {
+            this.redisClient = new Redis({
+                host: this.configService.get('REDIS_HOST', 'localhost'),
+                port: this.configService.get<number>('REDIS_PORT', 6379),
+                password: this.configService.get('REDIS_PASSWORD') || undefined,
+                tls: redisUseTls ? {} : undefined,
+                ...baseRedisOptions,
+            });
+        }
+
+        this.redisClient.on('error', (error) => {
+            console.error('Redis 連線錯誤:', error);
+        });
         // 初始化 Nodemailer 寄信設定
         this.transporter = nodemailer.createTransport({
             service: 'gmail',
