@@ -37,11 +37,17 @@ export class AuthService {
         if (redisUrl) {
             this.redisClient = new Redis(redisUrl, baseRedisOptions);
         } else {
+            const redisHost = this.configService.get('REDIS_HOST', 'localhost');
+            const needsTls =
+                redisUseTls ||
+                redisHost.includes('upstash.io') ||
+                redisHost.includes('redis.cloud.redislabs.com');
+
             this.redisClient = new Redis({
-                host: this.configService.get('REDIS_HOST', 'localhost'),
+                host: redisHost,
                 port: parseInt(this.configService.get('REDIS_PORT', '6379'), 10),
                 password: this.configService.get('REDIS_PASSWORD') || undefined,
-                ...(redisUseTls ? { tls: {} } : {}),
+                ...(needsTls ? { tls: {} } : {}),
                 maxRetriesPerRequest: 3,
                 connectTimeout: 10000,
             });
