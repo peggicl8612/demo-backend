@@ -37,29 +37,28 @@ export class AuthService {
         if (redisUrl) {
             this.redisClient = new Redis(redisUrl, baseRedisOptions);
         } else {
- this.redisClient = new Redis({
-    host: this.configService.get('REDIS_HOST', 'localhost'),
-    port: parseInt(this.configService.get('REDIS_PORT', '6379'), 10),
-    password: this.configService.get('REDIS_PASSWORD') || undefined,
-    // 關鍵：Upstash 必須用 TLS，且 Render 環境下不要有亂七八糟的參數
-    tls: {}, 
-    maxRetriesPerRequest: 3,
-    connectTimeout: 10000, // 增加等待時間，避免網路抖動就斷線
-});
+            this.redisClient = new Redis({
+                host: this.configService.get('REDIS_HOST', 'localhost'),
+                port: parseInt(this.configService.get('REDIS_PORT', '6379'), 10),
+                password: this.configService.get('REDIS_PASSWORD') || undefined,
+                ...(redisUseTls ? { tls: {} } : {}),
+                maxRetriesPerRequest: 3,
+                connectTimeout: 10000,
+            });
         }
 
         this.redisClient.on('error', (error) => {
             console.error('Redis 連線錯誤:', error);
         });
-        // 初始化 Nodemailer 寄信設定
+        // 初始化 Nodemailer 寄信設定（使用 .env 的 SMTP 設定，支援 Mailtrap 等）
         this.transporter = nodemailer.createTransport({
-            service: 'gmail',
+            host: this.configService.get('EMAIL_HOST'),
+            port: parseInt(this.configService.get('EMAIL_PORT', '587'), 10),
             auth: {
-                user: process.env.EMAIL_USER,
-                pass: process.env.EMAIL_PASS
-            }
-            
-        })
+                user: this.configService.get('EMAIL_USER'),
+                pass: this.configService.get('EMAIL_PASS'),
+            },
+        });
     }
     
     async login(loginDto: LoginDto) {
@@ -139,7 +138,7 @@ export class AuthService {
         try {
             // 發送 email
             await this.transporter.sendMail({
-                from: `"Neko Space" <${process.env.EMAIL_USER}>`,
+                from: `"Neko Space" <${this.configService.get('EMAIL_FROM', 'noreply@nekospace.com')}>`,
                 to: email,
                 subject: '[Neko Space] 您的註冊驗證碼',
                 html: `
